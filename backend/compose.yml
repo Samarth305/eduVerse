@@ -30,3 +30,12 @@ services:
       - 8080:8080
     depends_on:
       - db
+
+  redis:
+    image: redis:alpine
+    container_name: PlacePrep-redis
+    restart: always
+    ports:
+      - 6379:6379
+    volumes:
+      - ./data/redis:/data

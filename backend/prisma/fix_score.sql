@@ -6,3 +6,5 @@ ALTER TABLE "public"."Resource"
   ADD COLUMN IF NOT EXISTS "score" DOUBLE PRECISION;
 
 
+
+
