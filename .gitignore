@@ -24,3 +24,9 @@ dist-ssr
 *.sw?
 
 .env
+
+# Project reports, notes, and diagrams
+/*.pdf
+/Report Format/
+/EduVerse.txt
+/systemArchitecture.png

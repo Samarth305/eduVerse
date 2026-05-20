@@ -32,6 +32,7 @@
     "node-cron": "^4.2.0",
     "nodemailer": "^7.0.4",
     "PlacePlep": "file:..",
+    "redis": "^5.12.1",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {

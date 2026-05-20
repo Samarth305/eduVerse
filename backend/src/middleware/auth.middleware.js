@@ -31,8 +31,12 @@ const authMiddleware = async (req, res, next) => {
         next(); // Proceed to the next middleware or route handler
 
     } catch (error) {
-        console.error("Error in protectRoute middleware", error.message);
+        console.error("Error in protectRoute middleware:", error.message);
+        if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+            return res.status(401).json({ message: "Unauthorized - Invalid or expired token" });
+        }
         res.status(500).json({ message: "Internal Server Error" });
     }
 };
+
 export default authMiddleware;

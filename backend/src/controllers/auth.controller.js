@@ -6,6 +6,8 @@ import { OAuth2Client } from 'google-auth-library';
 import jwt from 'jsonwebtoken';
 import { sendWelcomeEmail, sendPasswordResetEmail, sendEmailVerificationEmail, sendModeratorRoleEmail } from '../lib/emailService.js';
 import crypto from 'crypto';
+import cache from '../lib/cache.js';
+
 
 // Generate a random 6-digit verification code
 const generateVerificationCode = () => {
@@ -33,19 +35,16 @@ export const signup = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Generate verification code and expiration
+        // Generate verification code
         const verificationCode = generateVerificationCode();
-        const verificationExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-        // Insert new user with verification data
+        // Insert new user without storing verification token in PostgreSQL
         const result = await prisma.user.create({
             data: {
                 role: role || 'user',
                 fullName,
                 email,
                 password: hashedPassword,
-                emailVerificationToken: verificationCode,
-                emailVerificationExpires: verificationExpires,
                 isEmailVerified: false
             },
             select: {
@@ -58,6 +57,9 @@ export const signup = async (req, res) => {
         });
 
         if (result) {
+            // Store verification code in cache with a 10-minute (600s) TTL
+            await cache.set(`verification:${email}`, verificationCode, 600);
+
             // Send verification email (non-blocking)
             sendEmailVerificationEmail(result.email, result.fullName, verificationCode)
                 .then(() => {
@@ -100,27 +102,26 @@ export const verifyEmail = async (req, res) => {
             return res.status(400).json({ message: "Email is already verified" });
         }
 
-        if (!user.emailVerificationToken || !user.emailVerificationExpires) {
-            return res.status(400).json({ message: "No verification code found" });
+        const cachedCode = await cache.get(`verification:${email}`);
+
+        if (!cachedCode) {
+            return res.status(400).json({ message: "Verification code not found or expired" });
         }
 
-        if (user.emailVerificationToken !== verificationCode) {
+        if (String(cachedCode).trim() !== String(verificationCode).trim()) {
             return res.status(400).json({ message: "Invalid verification code" });
         }
 
-        if (new Date() > user.emailVerificationExpires) {
-            return res.status(400).json({ message: "Verification code has expired" });
-        }
-
-        // Mark email as verified and clear verification data
+        // Mark email as verified
         await prisma.user.update({
             where: { id: user.id },
             data: {
-                isEmailVerified: true,
-                emailVerificationToken: null,
-                emailVerificationExpires: null
+                isEmailVerified: true
             }
         });
+
+        // Delete code from cache
+        await cache.del(`verification:${email}`);
 
         // Send welcome email after verification
         sendWelcomeEmail(user.email, user.fullName)
@@ -158,18 +159,11 @@ export const resendVerificationCode = async (req, res) => {
             return res.status(400).json({ message: "Email is already verified" });
         }
 
-        // Generate new verification code and expiration
+        // Generate new verification code
         const verificationCode = generateVerificationCode();
-        const verificationExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-        // Update user with new verification data
-        await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                emailVerificationToken: verificationCode,
-                emailVerificationExpires: verificationExpires
-            }
-        });
+        // Store new verification code in cache with a 10-minute (600s) TTL
+        await cache.set(`verification:${email}`, verificationCode, 600);
 
         // Send new verification email
         sendEmailVerificationEmail(user.email, user.fullName, verificationCode)
@@ -219,11 +213,14 @@ export const login = async (req, res) => {
 };
 
 export const createModerator = async (req, res) => {
-    const { fullName, email, password } = req.body;
+    const { fullName, email } = req.body;
     try {
-        if (!fullName || !email || !password) {
-            return res.status(400).json({ message: "All fields are required" });
+        if (!fullName || !email) {
+            return res.status(400).json({ message: "Full name and email are required" });
         }
+        
+        const password = req.body.password || crypto.randomBytes(6).toString('hex');
+
         if (password.length < 6) {
             return res.status(400).json({ message: "Password must be at least 6 characters long" });
         }
