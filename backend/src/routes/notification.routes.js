@@ -66,6 +66,7 @@ router.post('/test', authMiddleware, async (req, res) => {
 // Get user notifications
 router.get('/user', authMiddleware, async (req, res) => {
   try {
+    console.log(`[Debug Notif] Fetching notifications for user ID: ${req.user.id} (${req.user.email})`);
     const notifications = await prisma.notification.findMany({
       where: {
         userId: req.user.id
@@ -76,6 +77,7 @@ router.get('/user', authMiddleware, async (req, res) => {
       take: 20
     });
 
+    console.log(`[Debug Notif] Found ${notifications.length} notifications in database for user ID: ${req.user.id}`);
     res.json(notifications);
   } catch (error) {
     console.error('Error fetching notifications:', error);
@@ -126,13 +128,14 @@ router.patch('/read-all', authMiddleware, async (req, res) => {
 // Get unread notification count
 router.get('/unread-count', authMiddleware, async (req, res) => {
   try {
+    console.log(`[Debug Notif] Fetching unread count for user ID: ${req.user.id}`);
     const count = await prisma.notification.count({
       where: {
         userId: req.user.id,
         isRead: false
       }
     });
-
+    console.log(`[Debug Notif] Unread count for user ID: ${req.user.id} is ${count}`);
     res.json({ count });
   } catch (error) {
     console.error('Error fetching unread count:', error);

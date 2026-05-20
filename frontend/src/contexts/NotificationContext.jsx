@@ -18,10 +18,12 @@ export const NotificationProvider = ({ children, user }) => {
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef(null);
 
+  const userId = user?.id || user?._id;
+
   // Initialize socket connection
   useEffect(() => {
     // Only connect if user exists and has a valid ID
-    if (!user || !user.id) {
+    if (!user || !userId) {
       // Clean up existing connection if any
       if (socketRef.current) {
         socketRef.current.disconnect();
@@ -50,7 +52,7 @@ export const NotificationProvider = ({ children, user }) => {
     newSocket.on('connect', () => {
       setIsConnected(true);
       // Join user's personal room
-      newSocket.emit('join-user', user.id);
+      newSocket.emit('join-user', userId);
     });
 
     newSocket.on('disconnect', (reason) => {
@@ -88,7 +90,7 @@ export const NotificationProvider = ({ children, user }) => {
     socketRef.current = newSocket;
 
     // Load existing notifications only if we have a valid user
-    if (user && user.id) {
+    if (user && userId) {
       fetchNotifications();
       fetchUnreadCount();
     }
@@ -100,22 +102,30 @@ export const NotificationProvider = ({ children, user }) => {
         socketRef.current = null;
       }
     };
-  }, [user?.id]); // Only depend on user.id, not the entire user object
+  }, [userId]); // Only depend on userId, not the entire user object
+
+  // Helper to build headers dynamically and exclude 'null'/'undefined' string values
+  const getHeaders = () => {
+    const token = localStorage.getItem('jwt');
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    if (token && token !== 'null' && token !== 'undefined') {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  };
 
   // Fetch notifications from API
   const fetchNotifications = async () => {
     // Only fetch if we have a valid user
-    if (!user || !user.id) {
+    if (!user || !userId) {
       return;
     }
 
     try {
-      const token = localStorage.getItem('jwt');
       const response = await fetch('/api/notifications/user', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        headers: getHeaders(),
         credentials: 'include'
       });
 
@@ -133,17 +143,13 @@ export const NotificationProvider = ({ children, user }) => {
   // Fetch unread count
   const fetchUnreadCount = async () => {
     // Only fetch if we have a valid user
-    if (!user || !user.id) {
+    if (!user || !userId) {
       return;
     }
 
     try {
-      const token = localStorage.getItem('jwt');
       const response = await fetch('/api/notifications/unread-count', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        headers: getHeaders(),
         credentials: 'include'
       });
 
@@ -161,13 +167,9 @@ export const NotificationProvider = ({ children, user }) => {
   // Mark notification as read
   const markAsRead = async (notificationId) => {
     try {
-      const token = localStorage.getItem('jwt');
       const response = await fetch(`/api/notifications/${notificationId}/read`, {
         method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        headers: getHeaders(),
         credentials: 'include'
       });
 
@@ -189,13 +191,9 @@ export const NotificationProvider = ({ children, user }) => {
   // Mark all notifications as read
   const markAllAsRead = async () => {
     try {
-      const token = localStorage.getItem('jwt');
       const response = await fetch('/api/notifications/read-all', {
         method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        headers: getHeaders(),
         credentials: 'include'
       });
 
@@ -213,13 +211,9 @@ export const NotificationProvider = ({ children, user }) => {
   // Delete notification
   const deleteNotification = async (notificationId) => {
     try {
-      const token = localStorage.getItem('jwt');
       const response = await fetch(`/api/notifications/${notificationId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        headers: getHeaders(),
         credentials: 'include'
       });
 
