@@ -90,9 +90,16 @@ model Participation {
   endTime        DateTime?
   submittedAt    DateTime?
   violations     Int           @default(0)
+  finalScore     Float?
+  correct        Int?
+  attempted      Int?
+  negativeMarks  Float?
   freePractice   freePractice? @relation("FreePracticeParticipation", fields: [freePracticeId], references: [id])
   user           User          @relation(fields: [sid], references: [id], onDelete: Cascade)
   testSeries     TestSeries?   @relation("TestSeriesParticipation", fields: [testSeriesId], references: [id])
+
+  @@index([testSeriesId])
+  @@index([sid])
 }
 
 model StudentActivity {
@@ -108,6 +115,10 @@ model StudentActivity {
   question       Question      @relation(fields: [qid], references: [id], onDelete: Cascade)
   user           User          @relation(fields: [sid], references: [id], onDelete: Cascade)
   testSeries     TestSeries?   @relation("TestSeriesToStudentActivity", fields: [testSeriesId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([testSeriesId])
+  @@index([sid])
+  @@index([qid])
 }
 
 model Activity {

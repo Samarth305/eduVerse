@@ -420,18 +420,21 @@ export const getAllUsers = async (req, res) => {
       select: { id: true, fullName: true, email: true, role: true }
     });
 
-    // Build per-user accuracy from StudentActivity
-    const activities = await prisma.studentActivity.findMany({
-      where: { selectedAnswer: { not: null } },
-      include: { question: { select: { correctAnswers: true } } }
+    // Build per-user accuracy from pre-calculated Participation stats
+    const participationsAgg = await prisma.participation.groupBy({
+      by: ['sid'],
+      _sum: {
+        attempted: true,
+        correct: true
+      }
     });
 
     const userStats = new Map();
-    activities.forEach(a => {
-      if (!userStats.has(a.sid)) userStats.set(a.sid, { attempted: 0, correct: 0 });
-      const stats = userStats.get(a.sid);
-      stats.attempted += 1;
-      if (Array.isArray(a.question.correctAnswers) && a.question.correctAnswers.includes(a.selectedAnswer)) stats.correct += 1;
+    participationsAgg.forEach(p => {
+      userStats.set(p.sid, {
+        attempted: p._sum.attempted || 0,
+        correct: p._sum.correct || 0
+      });
     });
 
     const usersWithScore = users.map(u => {
@@ -442,6 +445,7 @@ export const getAllUsers = async (req, res) => {
 
     res.json({ users: usersWithScore });
   } catch (error) {
+    console.error('Error fetching all users:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 };
