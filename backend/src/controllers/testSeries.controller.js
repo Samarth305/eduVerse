@@ -386,14 +386,18 @@ export const submitTestSeriesAnswers = async (req, res) => {
       currentViolations += 1;
     }
 
-    // Update participation (set endTime, submittedAt, and violations)
+    // Update participation (set endTime, submittedAt, violations, and scores)
     const endTime = new Date();
     await prisma.participation.updateMany({
       where: { sid: userId, testSeriesId: Number(id) },
       data: { 
         endTime: endTime,
         submittedAt: endTime,
-        violations: currentViolations
+        violations: currentViolations,
+        finalScore: finalScore,
+        correct: score,
+        attempted: attempted,
+        negativeMarks: negativeMarks
       }
     });
     
@@ -623,7 +627,7 @@ export const getContestLeaderboard = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Get all participations for this contest with user details
+    // Get all participations for this contest with precalculated scores
     const participations = await prisma.participation.findMany({
       where: { testSeriesId: Number(id) },
       select: {
@@ -631,6 +635,10 @@ export const getContestLeaderboard = async (req, res) => {
         startTime: true,
         endTime: true,
         submittedAt: true,
+        finalScore: true,
+        correct: true,
+        attempted: true,
+        negativeMarks: true,
         user: {
           select: {
             id: true,
@@ -639,19 +647,12 @@ export const getContestLeaderboard = async (req, res) => {
           }
         }
       },
-      orderBy: {
-        submittedAt: 'asc' // First to submit gets higher rank in case of tie
-      }
-    });
-    
-    console.log('Raw participations data:', JSON.stringify(participations, null, 2));
-
-    // Get all users' StudentActivity for this contest
-    const allActivities = await prisma.studentActivity.findMany({
-      where: { testSeriesId: Number(id) }
+      orderBy: [
+        { finalScore: 'desc' },
+        { submittedAt: 'asc' }
+      ]
     });
 
-    // Get correct answers for all questions in this contest
     const contest = await prisma.testSeries.findUnique({
       where: { id: Number(id) },
       select: { 
@@ -659,12 +660,7 @@ export const getContestLeaderboard = async (req, res) => {
         endTime: true,
         hasNegativeMarking: true,
         negativeMarkingValue: true,
-        questions: { 
-          select: { 
-            id: true, 
-            correctAnswers: true
-          } 
-        } 
+        questions: { select: { id: true } } 
       }
     });
 
@@ -672,154 +668,43 @@ export const getContestLeaderboard = async (req, res) => {
       return res.status(404).json({ message: 'Contest not found.' });
     }
 
-    const correctMap = {};
-    contest.questions.forEach(q => { correctMap[q.id] = q.correctAnswers; });
     const totalQuestions = contest.questions.length;
 
-    // Calculate scores for each user
-    const userScores = {};
-    allActivities.forEach(act => {
-      if (!userScores[act.sid]) userScores[act.sid] = { correct: 0, attempted: 0 };
-      const hasAnswer = act.selectedAnswer && act.selectedAnswer.trim() !== '' && act.selectedAnswer !== 'null';
-      if (hasAnswer) userScores[act.sid].attempted++;
-      if (hasAnswer && Array.isArray(correctMap[act.qid]) && correctMap[act.qid].includes(act.selectedAnswer)) userScores[act.sid].correct++;
-    });
-
-    // Create leaderboard entries
-    const leaderboard = participations.map(participation => {
-      const userScore = userScores[participation.sid] || { correct: 0, attempted: 0 };
-      const wrongAnswers = Math.max(0, (userScore.attempted || 0) - (userScore.correct || 0));
-      // Compute total negative marks weighted by per-question score using activities
-      let negativeMarks = 0;
-      if (contest.hasNegativeMarking) {
-        const ratio = Number(contest.negativeMarkingValue) || 0;
-        const activityForUser = allActivities.filter(a => a.sid === participation.sid);
-        activityForUser.forEach(a => {
-          const hasAns = a.selectedAnswer && a.selectedAnswer.trim() !== '' && a.selectedAnswer !== 'null';
-          const isCorrect = hasAns && Array.isArray(correctMap[a.qid]) && correctMap[a.qid].includes(a.selectedAnswer);
-          if (hasAns && !isCorrect) {
-            const qScore = Number(contest.questions.find(q => q.id === a.qid)?.score) || 1;
-            negativeMarks += ratio * qScore;
-          }
-        });
-      }
-      const finalScore = Math.max(0, (userScore.correct || 0) - negativeMarks);
-      const percentage = totalQuestions > 0 ? (finalScore / totalQuestions) * 100 : 0;
-      const accuracy = userScore.attempted > 0 ? (userScore.correct / userScore.attempted) * 100 : 0;
-      
-      // Debug logging for time calculation
-      console.log(`=== Time calculation for ${participation.user.fullName} ===`);
-      console.log('Participation data:', {
-        startTime: participation.startTime,
-        endTime: participation.endTime,
-        submittedAt: participation.submittedAt
-      });
-      console.log('Contest data:', {
-        startTime: contest.startTime,
-        endTime: contest.endTime
-      });
-      
+    // Create leaderboard entries directly from the participation stats
+    const leaderboard = participations.map((p, index) => {
+      // Calculate time taken
       let timeTaken = 0;
-      
-      // Method 1: Use participation startTime and endTime
-      if (participation.startTime && participation.endTime) {
-        const startTime = new Date(participation.startTime);
-        const endTime = new Date(participation.endTime);
-        
-        // Validate dates
-        if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
-          console.log('Invalid dates detected:', { startTime: participation.startTime, endTime: participation.endTime });
-        } else {
-          timeTaken = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
-          console.log('Method 1 (startTime-endTime):', timeTaken, 'minutes');
-          console.log('Start time:', startTime.toISOString());
-          console.log('End time:', endTime.toISOString());
-        }
-      }
-      // Method 2: Use participation startTime and submittedAt
-      else if (participation.startTime && participation.submittedAt) {
-        const startTime = new Date(participation.startTime);
-        const submittedAt = new Date(participation.submittedAt);
-        
-        // Validate dates
-        if (isNaN(startTime.getTime()) || isNaN(submittedAt.getTime())) {
-          console.log('Invalid dates detected:', { startTime: participation.startTime, submittedAt: participation.submittedAt });
-        } else {
-          timeTaken = Math.round((submittedAt.getTime() - startTime.getTime()) / (1000 * 60));
-          console.log('Method 2 (startTime-submittedAt):', timeTaken, 'minutes');
-          console.log('Start time:', startTime.toISOString());
-          console.log('Submitted at:', submittedAt.toISOString());
-        }
-      }
-      // Method 2.5: Use contest startTime and participation submittedAt (fallback for missing participation startTime)
-      else if (contest.startTime && participation.submittedAt) {
-        const startTime = new Date(contest.startTime);
-        const submittedAt = new Date(participation.submittedAt);
-        
-        // Validate dates
-        if (isNaN(startTime.getTime()) || isNaN(submittedAt.getTime())) {
-          console.log('Invalid dates detected:', { startTime: contest.startTime, submittedAt: participation.submittedAt });
-        } else {
-          timeTaken = Math.round((submittedAt.getTime() - startTime.getTime()) / (1000 * 60));
-          console.log('Method 2.5 (contest startTime-submittedAt):', timeTaken, 'minutes');
-          console.log('Contest start time:', startTime.toISOString());
-          console.log('Submitted at:', submittedAt.toISOString());
-        }
-      }
-      // Method 3: Use contest startTime and endTime
-      else if (contest.startTime && contest.endTime) {
-        const startTime = new Date(contest.startTime);
-        const endTime = new Date(contest.endTime);
-        
-        // Validate dates
-        if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
-          console.log('Invalid contest dates detected:', { startTime: contest.startTime, endTime: contest.endTime });
-        } else {
-          timeTaken = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
-          console.log('Method 3 (contest duration):', timeTaken, 'minutes');
-          console.log('Contest start time:', startTime.toISOString());
-          console.log('Contest end time:', endTime.toISOString());
-        }
-      }
-      else {
-        console.log('No time data available, using 0');
+      if (p.startTime && p.endTime) {
+        timeTaken = Math.round((new Date(p.endTime).getTime() - new Date(p.startTime).getTime()) / (1000 * 60));
+      } else if (p.startTime && p.submittedAt) {
+        timeTaken = Math.round((new Date(p.submittedAt).getTime() - new Date(p.startTime).getTime()) / (1000 * 60));
+      } else if (contest.startTime && p.submittedAt) {
+        timeTaken = Math.round((new Date(p.submittedAt).getTime() - new Date(contest.startTime).getTime()) / (1000 * 60));
       }
       
-      console.log('Final timeTaken:', timeTaken, 'minutes');
-      console.log('=====================================');
+      const attempted = p.attempted || 0;
+      const correct = p.correct || 0;
+      const finalScore = p.finalScore || 0;
+      
+      const percentage = totalQuestions > 0 ? (finalScore / totalQuestions) * 100 : 0;
+      const accuracy = attempted > 0 ? (correct / attempted) * 100 : 0;
       
       return {
-        rank: 0, // Will be calculated below
-        userId: participation.sid,
-        userName: participation.user.fullName,
-        userEmail: participation.user.email,
-        correct: userScore.correct,
-        finalScore,
-        negativeMarks,
+        rank: index + 1,
+        userId: p.sid,
+        userName: p.user.fullName,
+        userEmail: p.user.email,
+        correct: correct,
+        finalScore: finalScore,
+        negativeMarks: p.negativeMarks || 0,
         hasNegativeMarking: contest.hasNegativeMarking,
-        attempted: userScore.attempted,
+        attempted: attempted,
         totalQuestions: totalQuestions,
         percentage: Math.round(percentage * 100) / 100,
         accuracy: Math.round(accuracy * 100) / 100,
-        submittedAt: participation.submittedAt,
+        submittedAt: p.submittedAt,
         timeTaken: timeTaken
       };
-    });
-
-    // Sort by score (descending), then by submission time (ascending for tie-break)
-    leaderboard.sort((a, b) => {
-      const aScore = contest.hasNegativeMarking ? a.finalScore : a.correct;
-      const bScore = contest.hasNegativeMarking ? b.finalScore : b.correct;
-      if (bScore !== aScore) return bScore - aScore;
-      if (a.submittedAt && b.submittedAt) {
-        return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
-      }
-      return 0;
-    });
-
-    // Assign ranks
-    leaderboard.forEach((entry, index) => {
-      entry.rank = index + 1;
     });
 
     res.json({
@@ -837,23 +722,20 @@ export const getContestLeaderboard = async (req, res) => {
 export const getContestStats = async (req, res) => {
   try {
     const { id } = req.params;
-    // Get all participations for this contest
+    // Get all participations with precalculated scores
     const participations = await prisma.participation.findMany({
       where: { testSeriesId: Number(id) },
-      select: { sid: true, startTime: true, endTime: true }
+      select: { sid: true, finalScore: true }
     });
 
-    // Get all users' StudentActivity for this contest
+    // Get all users' StudentActivity for question-wise stats
     const allActivities = await prisma.studentActivity.findMany({
       where: { testSeriesId: Number(id) }
     });
 
-    // Get correct answers for all questions in this contest
     const contest = await prisma.testSeries.findUnique({
       where: { id: Number(id) },
       select: { 
-        hasNegativeMarking: true,
-        negativeMarkingValue: true,
         questions: { 
           select: { 
             id: true, 
@@ -869,40 +751,22 @@ export const getContestStats = async (req, res) => {
       return res.status(404).json({ message: 'Contest not found.' });
     }
 
-    const correctMap = {};
-    contest.questions.forEach(q => { correctMap[q.id] = q.correctAnswers; });
     const totalQuestions = contest.questions.length;
+    const totalParticipants = participations.length;
 
-    // Calculate scores for each user
-    const userScores = {};
-    allActivities.forEach(act => {
-      if (!userScores[act.sid]) userScores[act.sid] = { correct: 0, attempted: 0 };
-      const hasAnswer = act.selectedAnswer && act.selectedAnswer.trim() !== '' && act.selectedAnswer !== 'null';
-      if (hasAnswer) userScores[act.sid].attempted++;
-      if (hasAnswer && Array.isArray(correctMap[act.qid]) && correctMap[act.qid].includes(act.selectedAnswer)) userScores[act.sid].correct++;
-    });
-
-    // Build array of scores (apply negative marking if enabled)
-    const scores = Object.values(userScores).map(u => {
-      const attempted = u.attempted || 0;
-      const correct = u.correct || 0;
-      const wrong = Math.max(0, attempted - correct);
-      let negative = 0;
-      if (contest.hasNegativeMarking) {
-        const ratio = Number(contest.negativeMarkingValue) || 0;
-        negative = wrong * ratio * 1;
-      }
-      const finalScore = Math.max(0, correct - negative);
-      return finalScore;
-    });
+    // Use precalculated scores from the database
+    const scores = participations.map(p => p.finalScore || 0);
 
     // Calculate average
     const average = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-    const averagePercentage = scores.length ? ((average / totalQuestions) * 100) : 0;
+    const averagePercentage = scores.length && totalQuestions > 0 ? ((average / totalQuestions) * 100) : 0;
 
     // Calculate question-wise statistics
     const questionStats = {};
+    const correctMap = {};
+    
     contest.questions.forEach(q => {
+      correctMap[q.id] = q.correctAnswers;
       questionStats[q.id] = {
         questionId: q.id,
         question: q.question,
@@ -934,21 +798,20 @@ export const getContestStats = async (req, res) => {
     });
 
     // Calculate not attempted for each question
-    const totalParticipants = participations.length;
     Object.values(questionStats).forEach(q => {
       q.notAttempted = totalParticipants - q.totalAttempts;
     });
 
     // Find most/least statistics
     const questionStatsArray = Object.values(questionStats);
-    const mostCorrect = questionStatsArray.reduce((max, q) => 
-      q.correctAttempts > max.correctAttempts ? q : max, questionStatsArray[0]);
-    const mostIncorrect = questionStatsArray.reduce((max, q) => 
-      q.incorrectAttempts > max.incorrectAttempts ? q : max, questionStatsArray[0]);
-    const mostAttempted = questionStatsArray.reduce((max, q) => 
-      q.totalAttempts > max.totalAttempts ? q : max, questionStatsArray[0]);
-    const leastAttempted = questionStatsArray.reduce((min, q) => 
-      q.totalAttempts < min.totalAttempts ? q : min, questionStatsArray[0]);
+    const mostCorrect = questionStatsArray.length > 0 ? questionStatsArray.reduce((max, q) => 
+      q.correctAttempts > max.correctAttempts ? q : max, questionStatsArray[0]) : null;
+    const mostIncorrect = questionStatsArray.length > 0 ? questionStatsArray.reduce((max, q) => 
+      q.incorrectAttempts > max.incorrectAttempts ? q : max, questionStatsArray[0]) : null;
+    const mostAttempted = questionStatsArray.length > 0 ? questionStatsArray.reduce((max, q) => 
+      q.totalAttempts > max.totalAttempts ? q : max, questionStatsArray[0]) : null;
+    const leastAttempted = questionStatsArray.length > 0 ? questionStatsArray.reduce((min, q) => 
+      q.totalAttempts < min.totalAttempts ? q : min, questionStatsArray[0]) : null;
 
     res.json({
       scores,
@@ -976,95 +839,53 @@ export const getAllContestStats = async (req, res) => {
         title: true,
         startTime: true,
         endTime: true,
-        questions: {
-          select: {
-            id: true,
-            correctAnswers: true
-          }
-        }
+        questions: { select: { id: true } }
       }
     });
 
-    const allContestStats = [];
+    // O(1) query: group by testSeriesId and average the finalScore
+    const participationsAgg = await prisma.participation.groupBy({
+      by: ['testSeriesId'],
+      _count: { sid: true },
+      _avg: { finalScore: true }
+    });
 
-    for (const contest of contests) {
-      // Get all participations for this contest
-      const participations = await prisma.participation.findMany({
-        where: { testSeriesId: contest.id },
-        select: { sid: true }
-      });
+    const statsMap = {};
+    participationsAgg.forEach(p => {
+      if (p.testSeriesId) {
+        statsMap[p.testSeriesId] = {
+          totalParticipants: p._count.sid,
+          averageScore: p._avg.finalScore || 0
+        };
+      }
+    });
 
-      // Get all activities for this contest
-      const allActivities = await prisma.studentActivity.findMany({
-        where: { testSeriesId: contest.id }
-      });
-
+    const allContestStats = contests.map(contest => {
       const totalQuestions = contest.questions.length;
-      const totalParticipants = participations.length;
-
-      if (totalQuestions === 0) {
-        allContestStats.push({
-          contestId: contest.id,
-          contestTitle: contest.title,
-          startTime: contest.startTime,
-          endTime: contest.endTime,
-          totalQuestions,
-          totalParticipants,
-          averageScore: 0,
-          averagePercentage: 0,
-          status: new Date() < contest.startTime ? 'upcoming' : 
-                 new Date() > contest.endTime ? 'completed' : 'live'
-        });
-        continue;
+      const stats = statsMap[contest.id] || { totalParticipants: 0, averageScore: 0 };
+      
+      let averagePercentage = 0;
+      if (totalQuestions > 0 && stats.averageScore > 0) {
+        averagePercentage = (stats.averageScore / totalQuestions) * 100;
       }
 
-      if (totalParticipants === 0) {
-        allContestStats.push({
-          contestId: contest.id,
-          contestTitle: contest.title,
-          startTime: contest.startTime,
-          endTime: contest.endTime,
-          totalQuestions,
-          totalParticipants,
-          averageScore: 0,
-          averagePercentage: 0,
-          status: new Date() < contest.startTime ? 'upcoming' : 
-                 new Date() > contest.endTime ? 'completed' : 'live'
-        });
-        continue;
-      }
-
-      // Calculate scores
-      const correctMap = {};
-      contest.questions.forEach(q => { correctMap[q.id] = q.correctAnswers; });
-
-      const userScores = {};
-      allActivities.forEach(act => {
-        if (!userScores[act.sid]) userScores[act.sid] = { correct: 0, attempted: 0 };
-        if (act.selectedAnswer) userScores[act.sid].attempted++;
-        if (act.selectedAnswer && Array.isArray(correctMap[act.qid]) && correctMap[act.qid].includes(act.selectedAnswer)) userScores[act.sid].correct++;
-      });
-
-      const scores = Object.values(userScores).map(u => u.correct);
-      const averageScore = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
-      const averagePercentage = scores.length ? ((averageScore / totalQuestions) * 100) : 0;
-
-      allContestStats.push({
+      return {
         contestId: contest.id,
         contestTitle: contest.title,
         startTime: contest.startTime,
         endTime: contest.endTime,
         totalQuestions,
-        totalParticipants,
-        averageScore,
+        totalParticipants: stats.totalParticipants,
+        averageScore: stats.averageScore,
         averagePercentage,
         status: new Date() < contest.startTime ? 'upcoming' : 
                new Date() > contest.endTime ? 'completed' : 'live'
-      });
-    }
+      };
+    });
 
-    res.json({ contestStats: allContestStats });
+    res.json(allContestStats);
   } catch (error) {
+    console.error('Error in getAllContestStats:', error);
     res.status(500).json({ message: error.message });
   }
 };

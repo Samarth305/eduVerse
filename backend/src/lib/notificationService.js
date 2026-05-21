@@ -42,28 +42,28 @@ class NotificationService {
         select: { id: true }
       });
 
-      // Create notifications for all users
-      const notifications = await Promise.all(
-        users.map(user => 
-          prisma.notification.create({
-            data: {
-              userId: user.id,
-              title: notification.title,
-              message: notification.message,
-              type: notification.type,
-              data: notification.data || {},
-              isRead: false,
-              createdAt: new Date()
-            }
-          })
-        )
-      );
+      if (users.length === 0) return [];
+
+      const notificationsData = users.map(user => ({
+        userId: user.id,
+        title: notification.title,
+        message: notification.message,
+        type: notification.type,
+        data: notification.data || {},
+        isRead: false,
+        createdAt: new Date()
+      }));
+
+      // Bulk insert notifications in a single database query
+      await prisma.notification.createMany({
+        data: notificationsData
+      });
 
       // Send real-time notification to all connected users
       this.io.emit('new-notification', notification);
 
       console.log(`Notification sent to all users (${users.length}):`, notification.title);
-      return notifications;
+      return notificationsData;
     } catch (error) {
       console.error('Error sending notification to all users:', error);
       throw error;
@@ -78,21 +78,22 @@ class NotificationService {
         select: { id: true }
       });
 
-      const notifications = await Promise.all(
-        users.map(user => 
-          prisma.notification.create({
-            data: {
-              userId: user.id,
-              title: notification.title,
-              message: notification.message,
-              type: notification.type,
-              data: notification.data || {},
-              isRead: false,
-              createdAt: new Date()
-            }
-          })
-        )
-      );
+      if (users.length === 0) return [];
+
+      const notificationsData = users.map(user => ({
+        userId: user.id,
+        title: notification.title,
+        message: notification.message,
+        type: notification.type,
+        data: notification.data || {},
+        isRead: false,
+        createdAt: new Date()
+      }));
+
+      // Bulk insert notifications in a single database query
+      await prisma.notification.createMany({
+        data: notificationsData
+      });
 
       // Send real-time notification to users with specific role
       users.forEach(user => {
@@ -100,7 +101,7 @@ class NotificationService {
       });
 
       console.log(`Notification sent to ${users.length} users with role ${role}:`, notification.title);
-      return notifications;
+      return notificationsData;
     } catch (error) {
       console.error('Error sending notification to users by role:', error);
       throw error;

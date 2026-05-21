@@ -30,3 +30,4 @@ dist-ssr
 /Report Format/
 /EduVerse.txt
 /systemArchitecture.png
+backend/src/test_optimization.js

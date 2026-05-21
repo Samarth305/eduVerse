@@ -140,7 +140,18 @@ cron.schedule('*/5 * * * *', async () => { // every 5 minutes
     });
 
     for (const series of justStartedSeries) {
-      await notificationService.notifyContestStarted(series);
+      const alreadySent = await prisma.notification.findFirst({
+        where: {
+          type: 'CONTEST_STARTED',
+          message: { contains: series.title },
+          createdAt: { gte: new Date(now.getTime() - 15 * 60 * 1000) }
+        }
+      });
+      if (!alreadySent) {
+        await notificationService.notifyContestStarted(series);
+      } else {
+        console.log(`[Cron Duplicate Prevention] CONTEST_STARTED notification already sent for "${series.title}"`);
+      }
     }
 
     // Check for contests that just ended (within last 5 minutes)
@@ -154,7 +165,18 @@ cron.schedule('*/5 * * * *', async () => { // every 5 minutes
     });
 
     for (const series of justEndedSeries) {
-      await notificationService.notifyContestEnded(series);
+      const alreadySent = await prisma.notification.findFirst({
+        where: {
+          type: 'CONTEST_ENDED',
+          message: { contains: series.title },
+          createdAt: { gte: new Date(now.getTime() - 15 * 60 * 1000) }
+        }
+      });
+      if (!alreadySent) {
+        await notificationService.notifyContestEnded(series);
+      } else {
+        console.log(`[Cron Duplicate Prevention] CONTEST_ENDED notification already sent for "${series.title}"`);
+      }
     }
 
     // Check for contests starting in 30 minutes
@@ -168,7 +190,18 @@ cron.schedule('*/5 * * * *', async () => { // every 5 minutes
     });
 
     for (const series of startingSoonSeries) {
-      await notificationService.notifyContestStartingSoon(series, 30);
+      const alreadySent = await prisma.notification.findFirst({
+        where: {
+          type: 'CONTEST_STARTING_SOON',
+          message: { contains: series.title },
+          createdAt: { gte: new Date(now.getTime() - 15 * 60 * 1000) }
+        }
+      });
+      if (!alreadySent) {
+        await notificationService.notifyContestStartingSoon(series, 30);
+      } else {
+        console.log(`[Cron Duplicate Prevention] CONTEST_STARTING_SOON notification already sent for "${series.title}"`);
+      }
     }
 
     // Check for contests ending in 30 minutes
@@ -182,7 +215,18 @@ cron.schedule('*/5 * * * *', async () => { // every 5 minutes
     });
 
     for (const series of endingSoonSeries) {
-      await notificationService.notifyContestEndingSoon(series, 30);
+      const alreadySent = await prisma.notification.findFirst({
+        where: {
+          type: 'CONTEST_ENDING_SOON',
+          message: { contains: series.title },
+          createdAt: { gte: new Date(now.getTime() - 15 * 60 * 1000) }
+        }
+      });
+      if (!alreadySent) {
+        await notificationService.notifyContestEndingSoon(series, 30);
+      } else {
+        console.log(`[Cron Duplicate Prevention] CONTEST_ENDING_SOON notification already sent for "${series.title}"`);
+      }
     }
 
   } catch (error) {
