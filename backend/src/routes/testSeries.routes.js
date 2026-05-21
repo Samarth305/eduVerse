@@ -37,7 +37,7 @@ router.get('/', getAllTestSeries);
 router.get('/contests', getAllTestSeries);
 router.get('/participations', getUserParticipations);
 router.get('/contests/upcoming', getUpcomingContests);
-router.get('/stats/all', getAllContestStats);
+router.get('/stats/all', requireAdminOrModerator, getAllContestStats);
 router.get('/:id/questions', getTestSeriesQuestions);
 router.get('/:id/result', getUserContestResult);
 router.get('/:id/results', getUserContestResult);
