@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { emailQueue } from '../queues/email.queue.js';
 
 // Create transporter
 const createTransporter = () => {
@@ -19,7 +20,7 @@ const createTransporter = () => {
 };
 
 // Send welcome email to new users
-export const sendWelcomeEmail = async (email, fullName) => {
+export const _sendWelcomeEmail = async (email, fullName) => {
   try {
     const transporter = createTransporter();
     
@@ -168,7 +169,7 @@ export const sendWelcomeEmail = async (email, fullName) => {
 };
 
 // Send password reset email
-export const sendPasswordResetEmail = async (email, resetToken) => {
+export const _sendPasswordResetEmail = async (email, resetToken) => {
   try {
     const transporter = createTransporter();
     
@@ -282,7 +283,7 @@ export const sendPasswordResetEmail = async (email, resetToken) => {
 }; 
 
 // Send email verification email
-export const sendEmailVerificationEmail = async (email, fullName, verificationCode) => {
+export const _sendEmailVerificationEmail = async (email, fullName, verificationCode) => {
   try {
     const transporter = createTransporter();
     
@@ -399,7 +400,7 @@ export const sendEmailVerificationEmail = async (email, fullName, verificationCo
 }; 
 
 // Send moderator role assignment email
-export const sendModeratorRoleEmail = async (email, fullName, password) => {
+export const _sendModeratorRoleEmail = async (email, fullName, password) => {
   try {
     const transporter = createTransporter();
     
@@ -529,4 +530,25 @@ export const sendModeratorRoleEmail = async (email, fullName, password) => {
     console.error('Error sending moderator role assignment email:', error);
     throw error;
   }
+}; 
+
+// ==========================================
+// BULLMQ FACADE FUNCTIONS
+// These intercept the controller calls and route them to the queue instantly
+// ==========================================
+
+export const sendWelcomeEmail = async (email, fullName) => {
+  await emailQueue.add('email-job', { type: 'WELCOME_EMAIL', payload: { email, fullName } });
+};
+
+export const sendPasswordResetEmail = async (email, resetToken) => {
+  await emailQueue.add('email-job', { type: 'PASSWORD_RESET_EMAIL', payload: { email, resetToken } });
+};
+
+export const sendEmailVerificationEmail = async (email, fullName, verificationCode) => {
+  await emailQueue.add('email-job', { type: 'VERIFICATION_EMAIL', payload: { email, fullName, verificationCode } });
+};
+
+export const sendModeratorRoleEmail = async (email, fullName, password) => {
+  await emailQueue.add('email-job', { type: 'MODERATOR_ROLE_EMAIL', payload: { email, fullName, password } });
 }; 

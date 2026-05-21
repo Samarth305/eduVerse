@@ -15,6 +15,7 @@ import questionRoutes from './routes/question.routes.js';
 import notificationRoutes from './routes/notification.routes.js';
 import resultsRoutes from './routes/results.routes.js';
 import resourceRoutes from './routes/resource.routes.js';
+import './workers/email.worker.js'; // Start BullMQ background worker
 import cron from 'node-cron';
 import { PrismaClient } from '@prisma/client';
 import NotificationService from './lib/notificationService.js';
