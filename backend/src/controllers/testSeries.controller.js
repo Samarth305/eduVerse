@@ -2101,42 +2101,52 @@ export const recalculateContestResults = async (req, res) => {
     
     // Get all participations for this contest
     const participations = await prisma.participation.findMany({
-      where: { testSeriesId: Number(id) },
-      include: { studentActivities: true }
+      where: { testSeriesId: Number(id) }
+    });
+    
+    // Fetch all student answers for this contest
+    const allActivities = await prisma.studentActivity.findMany({
+      where: { testSeriesId: Number(id) }
     });
     
     let updatedCount = 0;
     
     // Recalculate results for each participation
     for (const participation of participations) {
-      let correctCount = 0;
-      const questionResults = [];
+      let score = 0;
+      let attempted = 0;
+      let negativeMarks = 0;
       
       for (const question of contest.questions) {
-        const userAnswer = participation.studentActivities.find(
-          activity => activity.qid === question.id
+        // Find this student's answer for this question
+        const userAnswer = allActivities.find(
+          activity => activity.qid === question.id && activity.sid === participation.sid
         );
         
-        if (userAnswer && userAnswer.selectedAnswer) {
+        if (userAnswer && userAnswer.selectedAnswer && userAnswer.selectedAnswer.trim() !== '' && userAnswer.selectedAnswer !== 'null') {
+          attempted++;
           const isCorrect = Array.isArray(question.correctAnswers) && 
             question.correctAnswers.includes(userAnswer.selectedAnswer.trim());
           
-          if (isCorrect) correctCount++;
-          
-          questionResults.push({
-            questionId: question.id,
-            userAnswer: userAnswer.selectedAnswer,
-            isCorrect,
-            correctAnswers: question.correctAnswers
-          });
+          if (isCorrect) {
+            score++;
+          } else if (contest.hasNegativeMarking) {
+            const ratio = Number(contest.negativeMarkingValue) || 0;
+            negativeMarks += ratio * 1;
+          }
         }
       }
       
-      // Update participation with new score
+      const finalScore = Math.max(0, score - negativeMarks);
+      
+      // Update participation with new O(1) performance fields
       await prisma.participation.update({
         where: { pid: participation.pid },
         data: { 
-          score: contest.questions.length > 0 ? Math.round((correctCount / contest.questions.length) * 100) : 0
+          finalScore: finalScore,
+          correct: score,
+          attempted: attempted,
+          negativeMarks: negativeMarks
         }
       });
       

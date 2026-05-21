@@ -9,7 +9,8 @@
     "seed": "node prisma/seed.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test": "cross-env NODE_ENV=test dotenv -e .env.test -- cross-env NODE_OPTIONS=--experimental-vm-modules jest --detectOpenHandles"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +20,7 @@
     "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^6.13.0",
     "bcryptjs": "^3.0.2",
+    "bullmq": "^5.76.11",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.0.1",
@@ -26,6 +28,7 @@
     "express": "^5.1.0",
     "google-auth-library": "^10.1.0",
     "helmet": "^8.1.0",
+    "ioredis": "^5.10.1",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^2.0.2",
@@ -37,7 +40,11 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.8",
+    "cross-env": "^10.1.0",
+    "dotenv-cli": "^11.0.0",
+    "jest": "^30.4.2",
     "nodemon": "^3.1.10",
-    "prisma": "^6.13.0"
+    "prisma": "^6.13.0",
+    "supertest": "^7.2.2"
   }
 }
